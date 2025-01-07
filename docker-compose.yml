@@ -1,0 +1,210 @@
+version: "3.8"
+
+x-spark-common: &spark-common
+  image: bitnami/spark:3.3.2
+  # build:
+  #   context: .
+  #   dockerfile: Dockerfile-spark
+  user: root
+  volumes:
+    - ./pipelines:/opt/bitnami/spark/jobs
+    - ./data:/opt/airflow/data
+    - ./data/output_data:/opt/airflow/data/output_data
+    - ./postgresql-42.2.18.jar:/opt/bitnami/spark/jars/postgresql-42.2.18.jar
+  networks:
+    - football
+services:
+  webserver:
+    # image: apache/airflow:2.6.0-python3.9
+    build: .
+    command: webserver
+    entrypoint: [ "/opt/airflow/script/entrypoint.sh" ]
+    depends_on:
+      - postgres
+      - chrome
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__WEBSERVER_BASE_URL=http://localhost:8080
+      - AIRFLOW__WEBSERVER__SECRET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"          # Giới hạn 1.5 CPU cores
+          memory: 3g           # Giới hạn bộ nhớ 3GB
+        reservations:
+          cpus: "1.0"          # Tài nguyên tối thiểu là 1 CPU
+          memory: 1.5g         # Bộ nhớ tối thiểu là 1.5GB
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./script/entrypoint.sh:/opt/airflow/script/entrypoint.sh
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      - ./data:/opt/airflow/data
+      - ./pipelines:/opt/airflow/pipelines
+      - /dev/shm:/dev/shm
+      - ./postgresql-42.2.18.jar:/opt/bitnami/spark/jars/postgresql-42.2.18.jar
+
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    networks:
+      - football
+    # user: "root"
+
+  chrome:
+    image: selenium/standalone-chrome
+    ports:
+      - "4444:4444"
+    volumes:
+      - /dev/shm:/dev/shm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:4444"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 1m
+    environment:
+      - SE_NODE_MAX_SESSIONS=5
+      - SE_NODE_SESSION_TIMEOUT=999999
+    deploy:
+      resources:
+        limits:
+          cpus: "8.0"         # Giới hạn 2 CPU cores cho Chrome
+          memory: 8g          # Giới hạn bộ nhớ 4GB cho Chrome
+        reservations:
+          cpus: "1.0"         # Tài nguyên tối thiểu là 1 CPU
+          memory: 2g          # Bộ nhớ tối thiểu là 2GB
+    networks:
+      - football
+    restart: always
+
+  postgres:
+    image: postgres:14.0
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+      - ./data:/opt/airflow/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    ports:
+      - "5432:5432"
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"          # Giới hạn 0.5 CPU cores cho Postgres
+          memory: 1g           # Giới hạn bộ nhớ 1GB
+        reservations:
+          cpus: "0.2"          # Tài nguyên tối thiểu là 0.2 CPU
+          memory: 512m         # Bộ nhớ tối thiểu là 512MB
+    networks:
+      - football
+    restart: always
+
+  streamlit:
+    image: python:3.9
+    # command: bash -c "run /opt/airflow/include/streamlit_app.py --server.port=8502 --server.enableWebsocketCompression=false --server.enableCORS=false"
+    # command: bash -c "pip install --no-cache-dir streamlit && streamlit run /opt/streamlit_app/streamlit_app.py --server.port=8502 --server.enableWebsocketCompression=false --server.enableCORS=false"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./pipelines:/opt/airflow/pipelines
+      - ./include:/opt/airflow/include
+    ports:
+      - "8502:8502"
+    networks:
+      - football
+
+  scheduler:
+    # image: apache/airflow:2.6.0-python3.9
+    build: .
+    depends_on:
+      - webserver
+      - chrome  
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      - ./data:/opt/airflow/data
+      - ./pipelines:/opt/airflow/pipelines
+      - ./postgresql-42.2.18.jar:/opt/bitnami/spark/jars/postgresql-42.2.18.jar
+
+    environment:
+      - LOAD_EX=n
+      - Executor=Sequential
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__WEBSERVER_BASE_URL=http://localhost:8080
+      - AIRFLOW__WEBSERVER__SECRET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"           # Giới hạn 1.5 CPU cores
+          memory: 2.5g          # Giới hạn bộ nhớ 2.5GB
+        reservations:
+          cpus: "1.0"           # Tài nguyên tối thiểu là 1 CPU
+          memory: 1.5g          # Bộ nhớ tối thiểu là 1.5GB
+    command: bash -c "pip install --no-cache-dir -r ./requirements.txt && airflow db upgrade && airflow scheduler"
+    networks:
+      - football
+    restart: always
+
+  spark-master:
+    <<: *spark-common
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      - SPARK_MODE = master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_NETWORK_TIMEOUT=6000s  # Set the network timeout to 600 seconds
+      - SPARK_EXECUTOR_HEARTBEATINTERVAL=1000s  # Set the heartbeat interval to 100 seconds
+      - SPARK_NETWORK_TIMEOUT=6000s
+      - SPARK_RPC_MESSAGE_MAX_SIZE=1024
+      - PYSPARK_PYTHON=/usr/bin/python3.9
+      - PYSPARK_DRIVER_PYTHON=/usr/bin/python3.9
+      
+    ports:
+      - "9090:8080"
+      - "7077:7077"
+        
+
+  spark-worker:
+    <<: *spark-common
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 6
+      SPARK_WORKER_MEMORY: 6g
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_NETWORK_TIMEOUT : 6000s  # Set the network timeout to 600 seconds
+      SPARK_EXECUTOR_HEARTBEATINTERVAL : 1000s  # Set the heartbeat interval to 100 seconds
+      SPARK_RPC_MESSAGE_MAX_SIZE: 1024
+      PYSPARK_PYTHON: /usr/bin/python3.9
+      PYSPARK_DRIVER_PYTHON: /usr/bin/python3.9
+
+      
+
+      
+networks:
+  football:
+
+volumes:
+  postgres-db-volume:
