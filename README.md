@@ -2,6 +2,16 @@
 
 This project involves building an automated pipeline to scrape, process, store, query, and visualize data. The goal is to create an end-to-end solution for collecting web data, processing it for further analysis, storing it in a structured format, and providing an interactive dashboard for data visualization and insights.
 
+## THÀNH VIÊN NHÓM
+
+| STT | MSSV     | Họ và Tên         | Email                   |
+| :-- | :------- | :---------------- | :---------------------- |
+| 1   | 21522211 | Mai Quốc Bảo      | 215221850@gm.uit.edu.vn |
+| 2   | 21521230 | Ngô Thùy Yến Nhi  | 21521230@gm.uit.edu.vn  |
+| 3   | 21522317 | Võ Thị Bích Ly    | 21522317@gm.uit.edu.vn  |
+| 4   | 21522351 | Trần Kim Thanh    | 21522605@gm.uit.edu.vn  |
+
+
 ## Key Components:
 **Data Pipeline with Airflow**:
 Apache Airflow is used to automate extract (web scraping) tasks from Tiki website, scheduling and orchestrating the data collection process through DAGs (Directed Acyclic Graphs).
